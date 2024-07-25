@@ -1,0 +1,210 @@
+Option Explicit
+
+Public Const StringSQL = "Provider=SQLOLEDB;Data Source=FBPPDBA025\SQLAPPS2;Initial Catalog=T2CO_PCG;User Id=T2CO_PCG_Reader;Password=WlkbigDog28bot$EE@c10130pFED6!;"
+
+'Public Const DataPath = "\\fdnet.com\KV_Projects\KV_T2CO\000_GENERAL\SHARE\PC Forms\Invoice Expenses\"
+'Public Const DataPath = "\\fdnet.com\fb_projects\KV_T2CO\000_GENERAL\SHARE\PC Forms\Invoice Expenses\"
+'Public Const DataPath = "C:\Users\nur47190\Documents\200 Expenses Format\"
+Public Const DataPath = "C:\Users\uza15050\OneDrive - Fluor Corporation\Documents\Database COPY\Live\V2\Invoice Expenses\"
+Public Const DataFile = "Expenses Format DataSouse.xlsm"
+
+Public IsFillError As Boolean
+
+Private Sub PahtSet()
+    Dim Path As String
+    
+'    Path = "'C:\Users\nur47190\Documents\200 Expenses Format\Expenses Format DataSouse.xlsm'"
+    Path = "'" & DataPath & DataFile & "'"
+    
+    Sheets("Expense").Select
+    ActiveSheet.Shapes.Range(Array("Button 4")).Select
+    Selection.OnAction = Path & "!Data_Fill"
+    ActiveSheet.Shapes.Range(Array("Button 9")).Select
+    Selection.OnAction = Path & "!Data_Lock"
+    ActiveSheet.Cells(13, 1).Select
+    
+    Sheets("Taxes").Select
+    ActiveSheet.Shapes.Range(Array("Button 1")).Select
+    Selection.OnAction = Path & "!Data_Fill"
+    ActiveSheet.Shapes.Range(Array("Button 5")).Select
+    Selection.OnAction = Path & "!Data_Lock"
+    ActiveSheet.Cells(13, 1).Select
+    
+    Sheets("AMI List").Select
+    ActiveSheet.Shapes.Range(Array("Button 2")).Select
+    Selection.OnAction = Path & "!AMI_List"
+    ActiveSheet.Cells(6, 2).Select
+    
+    Sheets("PAF Search").Select
+    ActiveSheet.Shapes.Range(Array("Button 2")).Select
+    Selection.OnAction = Path & "!PAF_Search"
+    ActiveSheet.Cells(6, 2).Select
+End Sub
+
+Public Sub Data_Fill()
+    Windows(DataFile).Visible = False
+    TrustHandle
+    
+    If Not Cells(1, 39) = "" Then
+        Windows(DataFile).Close
+        Exit Sub
+    End If
+    
+    ProgressInfo.Show
+    
+    If Not IsFillError Then
+        MsgBox "Data Filling Completed Successfully", vbOKOnly, "Data Filling Process"
+    Else
+        ActiveSheet.Range("A12:AV12").AutoFilter Field:=48, Criteria1:="<>"
+        MsgBox "Data Filling Completed With Errors", vbOKOnly, "Data Filling Process"
+    End If
+    
+    Windows(DataFile).Close
+End Sub
+
+Public Sub AMI_List()
+    Windows(DataFile).Visible = False
+    
+    Dim Cn As ADODB.Connection
+    Dim RS As ADODB.Recordset
+    Dim i As Integer
+
+    Set Cn = New ADODB.Connection
+    Cn.Open StringSQL
+    
+    If ActiveSheet.AutoFilterMode Then
+        If ActiveSheet.FilterMode Then ActiveSheet.ShowAllData
+    End If
+    
+    Range("B6:I1000000").ClearContents
+    
+    i = 6
+    If CBool(Cn.State And adStateOpen) Then
+        Set RS = New ADODB.Recordset
+        RS.LockType = adLockReadOnly
+        RS.Open "SELECT M.AMI_No_Short, M.[Description], D.POSCNo_SAP, IIF(S.SCOPENAME='PH4-FGP-Tie-Ins','Ph4-NIT-TGZ',S.SCOPENAME) SCOPENAME, D.NWA, D.AFE, M.[Currency], D.CE FROM (dbo.t_DA_AMI_Main M INNER JOIN dbo.t_DA_AMI_Detail D ON M.AMI_No=D.AMI_No) INNER JOIN dbo.GL00DI_PRJ20_PS S ON D.SCOPEID=S.SCOPEID WHERE M.Status in ('Approved', 'Submitted') AND M.[Close]=0 ORDER BY M.AMI_No_Short DESC", Cn
+        If Not RS.EOF Then
+            Cells(6, 2).CopyFromRecordset RS
+        End If
+        RS.Close
+        Set RS = Nothing
+        Cn.Close
+    End If
+    Set Cn = Nothing
+    
+    ActiveSheet.Cells(6, 2).Select
+    
+    Windows(DataFile).Close
+End Sub
+
+Public Sub PAF_Search()
+    Windows(DataFile).Visible = False
+    TrustHandle
+    
+    If Cells(2, 3) = "" Then
+        Range("B6:G" & Cells(2, 6)).ClearContents
+        Cells(2, 6) = 6
+        Windows(DataFile).Close
+        Exit Sub
+    End If
+    
+    Dim Cn As ADODB.Connection
+    Dim RS As ADODB.Recordset
+    Dim i As Integer
+
+    Set Cn = New ADODB.Connection
+    Cn.Open StringSQL
+    
+    Range("B6:G" & Cells(2, 6)).ClearContents
+    
+    i = 6
+    If CBool(Cn.State And adStateOpen) Then
+        Set RS = New ADODB.Recordset
+        RS.LockType = adLockReadOnly
+        RS.Open "SELECT * FROM (SELECT REV.PAF, [Name], Assignee, [Home location], [Site location], IIF([PAF Status]='De-PAFed','De-PAFed','Active') [PAF Status], CASE WHEN [PAF Status]='De-PAFed' THEN ISNULL([Forecast End Date],[PAF End Date]) ELSE NULL END [End Date], ROW_NUMBER() OVER(PARTITION BY REV.PAF ORDER BY REV.PAF, REV.PAFrev DESC) ID FROM Offshore.paf_emp_rev REV JOIN Offshore.paf_emp EMP ON REV.PAF=EMP.PAF WHERE ([PAF Status] IN ('Active', 'Revision Approved', 'De-PAFed') OR [PAF Status] LIKE 'KPJV Development%') AND [PAF App_Rej]='Approved' AND [Name] LIKE '%" & Cells(2, 3) & "%') SOURCE WHERE ID=1 ORDER BY PAF", Cn
+        Do While Not RS.EOF
+            Cells(i, 2) = RS!PAF
+            Cells(i, 3) = RS![Name]
+            Cells(i, 4) = RS!Assignee
+            Cells(i, 5) = RS![Home location]
+            Cells(i, 6) = RS![Site location]
+            Cells(i, 7) = RS![PAF Status]
+            
+            DoEvents
+            RS.MoveNext
+            i = i + 1
+        Loop
+        RS.Close
+        Set RS = Nothing
+        Cn.Close
+        
+        Cells(2, 6) = i
+    End If
+    Set Cn = Nothing
+    
+    Windows(DataFile).Close
+End Sub
+Sub SearchTA()
+    Dim SearchText As String, DateFrom As String, DateTo As String
+    
+    DateFrom = "'" & Format(Range("DateFrom"), "yyyy-mm-dd") & "'"
+    DateTo = "'" & Format(Range("DateTo"), "yyyy-mm-dd") & "'"
+    SearchText = "'" & Range("SearchText") & "'"
+    SimplesGetData "Lambda", "Exec hradm.get_ta_info " & SearchText & ", " & DateFrom & ", " & DateTo
+End Sub
+Sub SimplesGetData(RangeName As String, SQL As String)
+
+    Dim CDB As New ChesfordDB
+    Dim RS As New ADODB.Recordset
+    Dim ClearName As String
+    
+    ClearName = RangeName & "Clear"
+    Range(ClearName).ClearContents
+    CDB.TimeOut = 1200
+    CDB.SQLString = SQL
+    Set RS = CDB.OpenRS()
+    DoEvents
+    Range(RangeName).CopyFromRecordset RS
+    Set RS = Nothing
+
+End Sub
+Public Sub Data_Lock()
+    Windows(DataFile).Visible = False
+    
+    Dim UserID As String
+    UserID = UCase(Environ("UserName"))
+    
+    If ActiveSheet.Cells(1, 39) = "" Then
+        Application.ScreenUpdating = False
+
+        Sheets("Expense").Cells(1, 39) = UserID
+        Sheets("Expense").Cells.Locked = True
+        Sheets("Expense").Protect Password:="Bonjour", DrawingObjects:=True, Contents:=True, Scenarios:=True, AllowFiltering:=True
+
+        Sheets("Taxes").Cells(1, 39) = UserID
+        Sheets("Taxes").Cells.Locked = True
+        Sheets("Taxes").Protect Password:="Bonjour", DrawingObjects:=True, Contents:=True, Scenarios:=True, AllowFiltering:=True
+        
+        Application.ScreenUpdating = True
+    ElseIf UserID = ActiveSheet.Cells(1, 39) Or UserID = "SEM11576" Or UserID = "CHO32449" Then
+        Dim CurrentSheet As Object
+        Set CurrentSheet = ActiveSheet
+
+        Application.ScreenUpdating = False
+        
+        Sheets("Expense").Unprotect "Bonjour"
+        Sheets("Expense").Cells(1, 39) = ""
+
+        Sheets("Taxes").Unprotect "Bonjour"
+        Sheets("Taxes").Cells(1, 39) = ""
+        
+        CurrentSheet.Select
+        Application.ScreenUpdating = True
+        
+        Set CurrentSheet = Nothing
+    End If
+    
+    Windows(DataFile).Close
+End Sub
+
+

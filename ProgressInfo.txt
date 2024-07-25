@@ -1,0 +1,538 @@
+Option Explicit
+
+Private UserGroup As String
+Private UserData(2) As String
+Private FillType As String
+
+Private Sub UserForm_Initialize()
+   Me.Top = Application.Top + (Application.UsableHeight / 2) - (Me.Height / 2)
+   Me.Left = Application.Left + (Application.UsableWidth / 2) - (Me.Width / 2)
+End Sub
+
+Private Sub UserForm_Activate()
+    Dim Cn As ADODB.Connection
+    Dim UserID As String
+    Dim i As Integer, n As Integer
+    
+    UserID = UCase(Environ("UserName"))
+    Set Cn = New ADODB.Connection
+    Cn.Open StringSQL
+    IsFillError = False
+    
+    If UserID = "UZA15050" Or UserID = "UZB64410" Or UserID = "SEM11576" Or UserID = "CHO32449" Or UserID = "KUS38703" Or UserID = "MAN29745" Then
+        UserGroup = "Admin"
+    Else
+        UserGroup = "Guest"
+    End If
+    
+    If ActiveSheet.AutoFilterMode Then
+        If ActiveSheet.FilterMode Then ActiveSheet.ShowAllData
+    End If
+    
+    i = 12
+    Do While True
+        i = i + 1
+        'Check For Stop
+        If Trim(Cells(i, 14)) = "" Then
+            Exit Do
+        End If
+        n = n + 1
+    Loop
+    
+    i = 12
+    DoEvents
+    If CBool(Cn.State And adStateOpen) Then
+        Do While True
+            i = i + 1
+            
+            'Check For Stop
+            If Trim(Cells(i, 14)) = "" Then
+                Exit Do
+            End If
+            
+            'Save [Phase] and [CTR]
+            UserData(1) = Cells(i, 1)
+            UserData(2) = Cells(i, 2)
+            
+            'Clear Cells
+            Range("A" & i & ":B" & i & ",AD" & i & ":AV" & i).ClearContents
+            Range("A" & i & ":AV" & i & "").Interior.Pattern = xlNone
+            
+            If Cells(5, 4) = "Billable" And Not Cells(i, 9) = "" Then
+                If Left(Cells(i, 9), 4) = "AMI-" Then
+                    FillType = "AMI"
+                Else
+                    FillType = "TA"
+                End If
+            ElseIf Not Cells(i, 12) = "" Then
+                FillType = "EMP"
+            ElseIf Cells(i, 4) = "Subcontracts" Or Cells(i, 4) = "Miscellaneous expense - SC" Then
+                FillType = "SUB"
+            Else
+                FillType = "NON"
+            End If
+    
+            'Check Currency Filled
+            If Cells(i, 18) = "" Then
+                Write_Error "Fill [Currency] Column", i
+                Cells(i, 18).Interior.Color = 255
+            End If
+            
+            'Fill PAFs data
+            If Not Cells(i, 12) = "" Then
+                Fill_PAFs Cn, i
+                
+                'Get Project and CTR info
+                If Not Cells(i, 17) = "" Then
+                    Fill_MHRs Cn, i
+                Else
+                    Write_Error "Fill [Date To] Column", i
+                    Cells(i, 17).Interior.Color = 255
+                End If
+                
+                'Check for Finance
+                If Cells(i, 10) <> "" And Cells(i, 38) <> "" Then
+                    If Cells(i, 10) = Cells(i, 38) Then
+                        Cells(i, 43) = "TRUE"
+                    Else
+                        Cells(i, 43) = "FALSE"
+                        Cells(i, 43).Interior.Color = 255
+                    End If
+                End If
+                If Cells(i, 11) <> "" And Cells(i, 39) <> "" Then
+                    If Cells(i, 11) = Cells(i, 39) Then
+                        Cells(i, 44) = "TRUE"
+                    Else
+                        Cells(i, 44) = "FALSE"
+                        Cells(i, 44).Interior.Color = 255
+                    End If
+                End If
+                If Cells(i, 13) <> "" And Cells(i, 32) <> "" Then
+                    If Cells(i, 13) = Cells(i, 32) Then
+                        Cells(i, 45) = "TRUE"
+                    Else
+                        Cells(i, 45) = "FALSE"
+                        Cells(i, 45).Interior.Color = 255
+                    End If
+                End If
+                If Cells(i, 40) <> "Active" Then
+                    If Cells(i, 40) = "" Then
+                        Cells(i, 46) = "TRUE"
+                    Else
+                        Cells(i, 46) = "FALSE"
+                        Cells(i, 46).Interior.Color = 255
+                    End If
+                End If
+            End If
+            
+            'TA check data
+            If FillType = "TA" Then
+                Check_TA Cn, i
+            End If
+            
+            'SUB check data
+            If FillType = "SUB" Then
+                Check_SUB i
+            End If
+                
+            'Project Control Only
+            If UserGroup = "Admin" Then
+                'Expense Type
+                
+                'Restore [Project Scope] for NON type filling
+                If FillType = "NON" Or FillType = "SUB" Then
+                    If Not UserData(1) = "" Then
+                        Cells(i, 1) = UserData(1)
+                        Cells(i, 1).Interior.ThemeColor = 6
+                    Else
+                        Write_Error "Fill [Project Scope] Column", i
+                        Cells(i, 1).Interior.Color = 255
+                    End If
+                End If
+                
+                'AMI type filling
+                If FillType = "AMI" Then
+                    Fill_AMI Cn, i
+                    
+                    'Expenses Categories and Expense Type
+                    If ActiveSheet.Name = "Expense" And Not Cells(i, 35) = "" Then
+                        If Cells(i, 35) = "6608030" Then
+                            Cells(i, 33) = WorksheetFunction.VLookup(Cells(i, 4), Workbooks(DataFile).Worksheets("Expense").Range("B:C"), 2, False)
+                        Else
+                            Cells(i, 4) = WorksheetFunction.VLookup(Cells(i, 35), Workbooks(DataFile).Worksheets("Expense").Range("A:B"), 2, False)
+                            Cells(i, 33) = WorksheetFunction.VLookup(Cells(i, 35), Workbooks(DataFile).Worksheets("Expense").Range("A:C"), 3, False)
+                        End If
+                    End If
+                End If
+                
+                If Cells(i, 4) = "" Then
+                    Write_Error "Fill [Expense Type] Column", i
+                    Cells(i, 4).Interior.Color = 255
+                ElseIf Cells(i, 1) = "" Then
+                    Write_Error "Fill [Project Scope] Column", i
+                    Cells(i, 1).Interior.Color = 255
+                ElseIf Not Cells(i, 18) = "" Then
+                    If ActiveSheet.Name = "Taxes" Or Not FillType = "AMI" Then
+                        'Expenses Categories
+                        Cells(i, 33) = WorksheetFunction.VLookup(Cells(i, 4), Workbooks(DataFile).Worksheets("Expense").Range("B:C"), 2, False)
+                        If Cells(i, 33) = "" Then
+                            Write_Error "[Expenses Categories] not found", i
+                            Cells(i, 33).Interior.Color = 255
+                        End If
+    
+                        'Cost Element
+                        Cells(i, 35) = WorksheetFunction.VLookup(Cells(i, 4), Workbooks(DataFile).Worksheets("Expense").Range("B:D"), 3, False)
+                        If Cells(i, 35) = "" Then
+                            Write_Error "[Cost Element] not found", i
+                            Cells(i, 35).Interior.Color = 255
+                        End If
+                    End If
+                    
+                    If Cells(5, 4) = "Non-Billable" Then
+                        'Update CTR
+                        Cells(i, 2) = "NBIL"
+
+                        'NetWork
+                        Fill_NetWork_NB i
+                    ElseIf FillType = "SUB" Then
+                        Fill_SUB i
+                        
+                        'Update CTR
+                        Cells(i, 2) = Right(Cells(i, 34), 4)
+                    ElseIf Cells(i, 4) = "Rentals - Facility" Then
+                        'Update Project Scope
+                        'Cells(i, 1) = IIf(Left(Cells(i, 1), 3) = "INT", "INT-EXE-TGZ", "ST2-NIT-TGZ")
+                        Cells(i, 1) = IIf(Left(Cells(i, 1), 3) = "INT", "INT-EXE-TGZ", IIf(Left(Cells(i, 1), 2) = "ST", Cells(i, 1), "ST2-NIT-TGZ"))
+                        
+                        'NetWork & AFE
+                        Select Case Cells(i, 1) & "#" & Cells(i, 18)
+                            Case "INT-EXE-TGZ#KZT"
+                                Cells(i, 34) = "00T9CO000701 X36T"
+                                Cells(i, 36) = 9416113359#
+                            Case "ST2-NIT-TGZ#KZT"
+                                Cells(i, 34) = "00T9CO000470 E367"
+                                Cells(i, 36) = 9414112378#
+                            Case "ST-SUET-TGZ#KZT"
+                                Cells(i, 34) = "00T9CO000470 T368"
+                                Cells(i, 36) = 9414112378#
+                            Case Else
+                                Write_Error "[NW/NWA] not found", i
+                                Cells(i, 34).Interior.Color = 255
+                        End Select
+                        
+                        'Update CTR
+                        Cells(i, 2) = Right(Cells(i, 34), 4)
+                    Else
+                        'Update CTR
+                        If Not Cells(i, 1) = "" And Not Left(Cells(i, 1), 7) = "INT-EXE" Then Fill_CTR i
+    
+                        'NetWork & AFE
+                        Fill_NetWork i, IIf(Cells(i, 31) = "DEL", "DEL", "")
+                    End If
+                End If
+            End If
+            
+            'Refresh Progress Indicator
+            Me.piInfo.Caption = Format((i - 12) / n * 100, "#0.00") & "% Completed"
+            Me.piBar.Width = (i - 12) / n * 200
+            DoEvents
+        Loop
+        
+        Cn.Close
+    End If
+    Set Cn = Nothing
+
+    Unload Me
+End Sub
+
+Private Sub Write_Error(Message As String, i As Integer)
+    IsFillError = True
+    If Cells(i, 48) = "" Then
+        Cells(i, 48) = Message
+    End If
+End Sub
+
+Private Sub Fill_PAFs(ByRef Cn As ADODB.Connection, i As Integer)
+    Dim RS As ADODB.Recordset
+    Dim SkipNextCheck As Boolean
+
+    Set RS = New ADODB.Recordset
+    RS.LockType = adLockReadOnly
+    RS.Open "SELECT TOP 1 FirstName, LastName, Assignee, [Home location], [Site location], [PAF Status], CASE WHEN [PAF Status]='De-PAFed' THEN ISNULL([Forecast End Date],[PAF End Date]) ELSE NULL END [End Date] FROM Offshore.paf_emp_rev REV JOIN Offshore.paf_emp EMP ON REV.PAF=EMP.PAF WHERE ([PAF Status] IN ('Active', 'Revision Approved', 'De-PAFed') OR [PAF Status] LIKE 'KPJV Development%') AND [PAF App_Rej]='Approved' AND REV.PAF='" & Cells(i, 12) & "' ORDER BY REV.PAFrev DESC", Cn
+    If Not RS.EOF Then
+        Cells(i, 30) = RS!Assignee
+        Cells(i, 31) = RS![Home location]
+        Cells(i, 32) = RS![Site location]
+        Cells(i, 38) = Trim(RS!LastName)
+        Cells(i, 39) = Trim(RS!FirstName)
+        Cells(i, 40) = RS![PAF Status]
+        Cells(i, 41) = RS![End Date]
+    Else
+        Write_Error "[PAF] not found", i
+        Cells(i, 12).Interior.Color = 255
+        SkipNextCheck = True
+    End If
+    RS.Close
+    Set RS = Nothing
+    
+    If Not SkipNextCheck Then
+        Set RS = New ADODB.Recordset
+        RS.LockType = adLockReadOnly
+        RS.Open "SELECT TOP 1 OLD.PAF FROM Offshore.paf_emp CUR, Offshore.paf_emp OLD JOIN Offshore.paf_emp_rev REV ON OLD.PAF=REV.PAF WHERE CUR.PAF='" & Cells(i, 12) & "' AND (CUR.network_id=OLD.network_id OR CUR.FullName=OLD.FullName) AND SUBSTRING(OLD.PAF,1,2)='KZ' AND ([PAF Status] IN ('Active', 'Revision Approved', 'De-PAFed') OR [PAF Status] LIKE 'KPJV Development%') AND [PAF App_Rej]='Approved' ORDER BY paf_revid DESC", Cn
+        If Not RS.EOF Then
+            If Cells(i, 12) <> RS!PAF Then
+                Write_Error "USE PAF '" & RS!PAF & "'", i
+                Cells(i, 12).Interior.Color = 255
+            End If
+        End If
+        RS.Close
+        Set RS = Nothing
+    End If
+End Sub
+
+Private Sub Fill_MHRs(ByRef Cn As ADODB.Connection, i As Integer)
+    Dim RS As ADODB.Recordset
+
+    Set RS = New ADODB.Recordset
+    RS.LockType = adLockReadOnly
+    RS.Open "SELECT TOP 1 stp_phase, [SAP NWA], [Home Location Code], [Site Location Code] FROM Onshore.mhrs_Mth_Mhr_Extract MHR JOIN Offshore.mhrs_partner_wbs_mapping WBS ON [Partner charge code]=[Partner WBS code] WHERE PAF='" & Cells(i, 12) & "' AND [Pay Week Ending]<=CONVERT(DATETIME,'" & Year(Cells(i, 17) + 6) & "-" & Month(Cells(i, 17) + 6) & "-" & Day(Cells(i, 17) + 6) & "',120) GROUP BY [Pay Week Ending], stp_phase, [SAP NWA], [Home Location Code], [Site Location Code] HAVING SUM([Total Hrs])!=0 ORDER BY [Pay Week Ending] DESC, SUM([Total Hrs]) DESC", Cn
+    If Not RS.EOF Then
+        If UserGroup = "Admin" And (FillType = "TA" Or FillType = "EMP") Then
+            Cells(i, 1) = IIf(RS!stp_phase = "Ph4-FGP-Tie-in", "Ph4-NIT-TGZ", RS!stp_phase)
+            Cells(i, 2) = RS![SAP NWA]
+        End If
+        Cells(i, 31) = RS![Home Location Code]
+        Cells(i, 32) = RS![Site location Code]
+    Else
+        Set RS = New ADODB.Recordset
+        RS.LockType = adLockReadOnly
+        RS.Open "SELECT TOP 1 stp_phase, [SAP NWA], [Home Location Code], [Site Location Code] FROM Onshore.mhrs_Mth_Mhr_Extract MHR JOIN Offshore.mhrs_partner_wbs_mapping WBS ON [Partner charge code]=[Partner WBS code] WHERE PAF='" & Cells(i, 12) & "' ORDER BY [Pay Week Ending] ASC, tbl_id ASC", Cn
+        If Not RS.EOF Then
+            If UserGroup = "Admin" And (FillType = "TA" Or FillType = "EMP") Then
+                Cells(i, 1) = RS!stp_phase
+                Cells(i, 2) = RS![SAP NWA]
+            End If
+            Cells(i, 31) = RS![Home Location Code]
+            Cells(i, 32) = RS![Site location Code]
+        Else
+            If UserGroup = "Admin" And (FillType = "TA" Or FillType = "EMP") Then
+                If Not UserData(1) = "" Then
+                    Cells(i, 1) = UserData(1)
+                    Cells(i, 1).Interior.ThemeColor = 6
+                Else
+                    Write_Error "[Phase] not found", i
+                    Cells(i, 1).Interior.Color = 255
+                End If
+            End If
+        End If
+    End If
+    RS.Close
+    Set RS = Nothing
+    
+    'Replace not used CTR
+    If Cells(i, 2) = "GX34" Then
+        Cells(i, 2) = "PX34"
+    End If
+End Sub
+
+Private Sub Check_TA(ByRef Cn As ADODB.Connection, i As Integer)
+    Dim RS As ADODB.Recordset
+
+    Set RS = New ADODB.Recordset
+    RS.LockType = adLockReadOnly
+    'RS.Open "SELECT ta_paf_no FROM hradm.ta_rev WHERE [ta_rev_status]='Authorised' AND ta_number+'C'+ta_rev='" & Cells(i, 9) & "'", Cn
+    RS.Open "SELECT ta_paf_no FROM hradm.ta_rev WHERE ta_number+'C'+ta_rev='" & Cells(i, 9) & "'", Cn
+    If Not RS.EOF Then
+        If Not Cells(i, 12) = RS!ta_paf_no Then
+            Write_Error "[PAF No] does not match as in [TA No]", i
+            Cells(i, 12).Interior.Color = 255
+        End If
+    Else
+        Write_Error "[TA No] not found", i
+        Cells(i, 9).Interior.Color = 255
+    End If
+    RS.Close
+    Set RS = Nothing
+End Sub
+
+Private Sub Fill_CTR(i As Integer)
+    Dim RS As ADODB.Recordset
+    Dim SQLConnection As String
+    Dim SQLQuery As String
+    
+    SQLConnection = "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=" & DataPath & DataFile & ";Extended Properties=Excel 12.0"
+    SQLQuery = "SELECT TOP 1 CTR FROM [NW Map$] WHERE [Project Scope]='" & Cells(i, 1) & "' AND [Expense Category]='" & Cells(i, 33) & "' AND [Currency]='" & Cells(i, 18) & "'"
+    
+    Cells(i, 1) = IIf(Cells(i, 1) = "INT-TTS-TGZ", "INT-EXE-TGZ", Cells(i, 1))
+    
+    Set RS = New ADODB.Recordset
+    RS.Open SQLQuery, SQLConnection, adOpenForwardOnly, adLockOptimistic
+    If Not RS.EOF Then
+        Cells(i, 2) = RS!CTR
+    Else
+        Write_Error "[CTR] not found", i
+        Cells(i, 2).Interior.Color = 255
+    End If
+    
+    RS.Close
+    Set RS = Nothing
+End Sub
+
+Private Sub Fill_NetWork(i As Integer, Location As String)
+    Dim RS As ADODB.Recordset
+    Dim SQLConnection As String
+    Dim SQLQuery As String
+    
+    SQLConnection = "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=" & DataPath & DataFile & ";Extended Properties=Excel 12.0"
+    SQLQuery = "SELECT TOP 1 T9CO, AFE FROM [NW Map$] WHERE [Project Scope]='" & Cells(i, 1) & "' AND [Expense Category]='" & Cells(i, 33) & "' AND [Currency]='" & Cells(i, 18) & "' AND CTR='" & Cells(i, 2) & "'"
+    SQLQuery = SQLQuery & " AND [Home Location]" & IIf(Location = "", " IS NULL", "='" & Location & "'")
+    
+    Set RS = New ADODB.Recordset
+    RS.Open SQLQuery, SQLConnection, adOpenForwardOnly, adLockOptimistic
+    If Not RS.EOF Then
+        Cells(i, 34) = RS!T9CO
+        If Not FillType = "AMI" Then Cells(i, 36) = RS!AFE
+    ElseIf Location = "DEL" Then
+        'If location DEL not fount
+        Fill_NetWork i, ""
+    Else
+        Write_Error "[NW/NWA] not found", i
+        Cells(i, 34).Interior.Color = 255
+    End If
+    
+    RS.Close
+    Set RS = Nothing
+End Sub
+
+Private Sub Fill_NetWork_NB(i As Integer)
+    If Cells(i, 13) = "ALG" Or Cells(i, 13) = "ALK" Or Cells(i, 13) = "ALK1" Or Cells(i, 13) = "ALT" Or Cells(i, 13) = "ALW" Then
+        Select Case Cells(i, 18)
+            Case Is = "KZT"
+                Cells(i, 34) = "00T9CO000465 NBIL"
+            Case Is = "GBP"
+                Cells(i, 34) = "00T9CO000437 NBIL"
+            Case Is = "USD"
+                Cells(i, 34) = "00T9CO000451 NBIL"
+        End Select
+    ElseIf Cells(i, 13) = "ATY" Or Cells(i, 13) = "ATY2" Or Cells(i, 13) = "ARD" Then
+        Select Case Cells(i, 18)
+            Case Is = "KZT"
+                Cells(i, 34) = "00T9CO000460 NBIL"
+            Case Is = "GBP"
+                Cells(i, 34) = "00T9CO000432 NBIL"
+            Case Is = "USD"
+                Cells(i, 34) = "00T9CO000446 NBIL"
+        End Select
+    ElseIf Cells(i, 13) = "TGZ" Then
+        Select Case Cells(i, 18)
+            Case Is = "KZT"
+                Cells(i, 34) = "00T9CO000471 NBIL"
+            Case Is = "GBP"
+                Cells(i, 34) = "00T9CO000443 NBIL"
+            Case Is = "USD"
+                Cells(i, 34) = "00T9CO000457 NBIL"
+        End Select
+    Else
+        Write_Error "[NW/NWA] not found", i
+        Cells(i, 34).Interior.Color = 255
+        Cells(i, 36).Interior.Color = 255
+    End If
+End Sub
+
+Private Sub Fill_AMI(ByRef Cn As ADODB.Connection, i As Integer)
+    Dim RS As ADODB.Recordset
+    Dim SQLQuery As String
+    
+    If Cells(i, 9) = "AMI-DHL-Courier Services" Then
+        Cells(i, 1) = "Ph4-FGP-ATY"
+        Cells(i, 2) = "E264"
+        Cells(i, 4) = "Miscellaneous expense - SC"
+        Cells(i, 33) = "Miscellaneous Costs - SC"
+        Cells(i, 35) = 6608030
+        Cells(i, 36) = 9414112378#
+    ElseIf Cells(i, 9) = "AMI-CMTGZ-Tranzit-Tax" Or Cells(i, 9) = "AMI-CMTGZ-Craft Training-Tax" Then
+        Cells(i, 1) = "INT-EXE-TGZ"
+        Cells(i, 2) = "X35T"
+        Cells(i, 35) = 6612196
+        Cells(i, 36) = 9416113359#
+    ElseIf Cells(i, 9) = "AMI-CMTGZ-Tranzit" Then
+        Select Case UserData(1)
+            Case ""
+                Write_Error "Fill [Project Scope] Column", i
+                Cells(i, 1).Interior.Color = 255
+            Case "INT-EXE-TGZ"
+                Cells(i, 1) = UserData(1)
+                Cells(i, 2) = "X36T"
+                Cells(i, 35) = 6604010
+                Cells(i, 36) = 9416113359#
+            Case "Ph4-NIT-TGZ"
+                Cells(i, 1) = UserData(1)
+                Cells(i, 2) = "E364"
+                Cells(i, 35) = 6604010
+                Cells(i, 36) = 9414112378#
+            Case Else
+                Write_Error "[Project Scope] not found", i
+                Cells(i, 1).Interior.Color = 255
+        End Select
+    Else
+        Set RS = New ADODB.Recordset
+        RS.LockType = adLockReadOnly
+        Debug.Print "starting to run the query..."
+        SQLQuery = "SELECT S.SCOPENAME, D.NWA, D.CE, D.AFE FROM (dbo.t_DA_AMI_Main M INNER JOIN dbo.t_DA_AMI_Detail D ON M.AMI_No=D.AMI_No) INNER JOIN dbo.GL00DI_PRJ20_PS S ON D.SCOPEID=S.SCOPEID WHERE M.Status in ('Approved', 'Submitted') AND M.[Close]=0 AND M.AMI_No_Short='" & Cells(i, 9) & "'"
+        Debug.Print "query run succesfully..."
+        RS.Open SQLQuery, Cn
+        
+        If Not RS.EOF Then
+            'Cells(i, 1) = IIf(RS!SCOPENAME = "PH4-FGP-Tie-Ins", "Ph4-NIT-TGZ", RS!SCOPENAME)
+            Cells(i, 1) = IIf(RS!SCOPENAME = "PH4-FGP-Tie-Ins", "Ph4-NIT-TGZ", IIf(RS!SCOPENAME = "PH4-NIT-TGZ", "ST2-NIT-TGZ", RS!SCOPENAME))
+            Cells(i, 2) = RS!NWA
+            Cells(i, 35) = IIf(IsNumeric(RS!ce), RS!ce * 1, RS!ce)
+            Cells(i, 36) = RS!AFE
+        Else
+            Write_Error "[AMI] not found", i
+            Cells(i, 9).Interior.Color = 255
+        End If
+        
+        RS.Close
+        Set RS = Nothing
+    End If
+End Sub
+
+Private Sub Fill_SUB(i As Integer)
+    Dim RS As ADODB.Recordset
+    Dim SQLConnection As String
+    Dim SQLQuery As String
+    
+    SQLConnection = "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=" & DataPath & DataFile & ";Extended Properties=Excel 12.0"
+    SQLQuery = "SELECT TOP 1 [T9CO], [CE], [AFE] FROM [Contract$] WHERE [Scope]='" & Cells(i, 1) & "' AND [ExpenseCategory]='" & Cells(i, 33) & "' AND [SC_No]='" & Cells(i, 10) & "' AND [Currency]='" & Cells(i, 18) & "'"
+    
+    Set RS = New ADODB.Recordset
+    RS.Open SQLQuery, SQLConnection, adOpenForwardOnly, adLockOptimistic
+    If Not RS.EOF Then
+        Cells(i, 34) = RS![T9CO]
+        Cells(i, 35) = RS![ce]
+        Cells(i, 36) = RS![AFE]
+    End If
+    
+    RS.Close
+    Set RS = Nothing
+End Sub
+
+Private Sub Check_SUB(i As Integer)
+    Dim RS As ADODB.Recordset
+    Dim SQLConnection As String
+    Dim SQLQuery As String
+    
+    SQLConnection = "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=" & DataPath & DataFile & ";Extended Properties=Excel 12.0"
+    SQLQuery = "SELECT * FROM [Contract$] WHERE [SC_No]='" & Cells(i, 10) & "'"
+    
+    Set RS = New ADODB.Recordset
+    RS.Open SQLQuery, SQLConnection, adOpenForwardOnly, adLockOptimistic
+    If RS.EOF Then
+        Write_Error "[Contract] not found", i
+        Cells(i, 10).Interior.Color = 255
+    End If
+    
+    RS.Close
+    Set RS = Nothing
+End Sub

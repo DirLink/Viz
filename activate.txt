@@ -1,0 +1,237 @@
+Private Sub UserForm_Activate()
+    Dim Cn As ADODB.Connection
+    Dim UserID As String
+    Dim i As Integer, n As Integer
+    
+    UserID = UCase(Environ("UserName"))
+    Set Cn = New ADODB.Connection
+    Cn.Open StringSQL
+    IsFillError = False
+    
+    If UserID = "UZA15050" Or UserID = "UZB64410" Or UserID = "SEM11576" Or UserID = "CHO32449" Or UserID = "KUS38703" Or UserID = "MAN29745" Then
+        UserGroup = "Admin"
+    Else
+        UserGroup = "Guest"
+    End If
+    
+    If ActiveSheet.AutoFilterMode Then
+        If ActiveSheet.FilterMode Then ActiveSheet.ShowAllData
+    End If
+    
+    i = 12
+    Do While True
+        i = i + 1
+        'Check For Stop
+        If Trim(Cells(i, 14)) = "" Then
+            Exit Do
+        End If
+        n = n + 1
+    Loop
+    
+    i = 12
+    DoEvents
+    If CBool(Cn.State And adStateOpen) Then
+        Do While True
+            i = i + 1
+            
+            'Check For Stop
+            If Trim(Cells(i, 14)) = "" Then
+                Exit Do
+            End If
+            
+            'Save [Phase] and [CTR]
+            UserData(1) = Cells(i, 1)
+            UserData(2) = Cells(i, 2)
+            
+            'Clear Cells
+            Range("A" & i & ":B" & i & ",AD" & i & ":AV" & i).ClearContents
+            Range("A" & i & ":AV" & i & "").Interior.Pattern = xlNone
+            
+            ' If Cells(5, 4) = "Billable" And Not Cells(i, 9) = "" Then
+            If Cells(5, 4) = "Billable" And Cells(i, 9) <> "" Then
+                If Left(Cells(i, 9), 4) = "AMI-" Then
+                    FillType = "AMI"
+                Else
+                    FillType = "TA"
+                End If
+            ElseIf Not Cells(i, 12) = "" Then
+                FillType = "EMP"
+            ElseIf Cells(i, 4) = "Subcontracts" Or Cells(i, 4) = "Miscellaneous expense - SC" Then
+                FillType = "SUB"
+            Else
+                FillType = "NON"
+            End If
+    
+            'Check Currency Filled
+            If Cells(i, 18) = "" Then
+                Write_Error "Fill [Currency] Column", i
+                Cells(i, 18).Interior.Color = 255
+            End If
+            
+            'Fill PAFs data
+            If Not Cells(i, 12) = "" Then
+                Fill_PAFs Cn, i
+                
+                'Get Project and CTR info
+                If Not Cells(i, 17) = "" Then
+                    Fill_MHRs Cn, i
+                Else
+                    Write_Error "Fill [Date To] Column", i
+                    Cells(i, 17).Interior.Color = 255
+                End If
+                
+                'Check for Finance
+                If Cells(i, 10) <> "" And Cells(i, 38) <> "" Then
+                    If Cells(i, 10) = Cells(i, 38) Then
+                        Cells(i, 43) = "TRUE"
+                    Else
+                        Cells(i, 43) = "FALSE"
+                        Cells(i, 43).Interior.Color = 255
+                    End If
+                End If
+                If Cells(i, 11) <> "" And Cells(i, 39) <> "" Then
+                    If Cells(i, 11) = Cells(i, 39) Then
+                        Cells(i, 44) = "TRUE"
+                    Else
+                        Cells(i, 44) = "FALSE"
+                        Cells(i, 44).Interior.Color = 255
+                    End If
+                End If
+                If Cells(i, 13) <> "" And Cells(i, 32) <> "" Then
+                    If Cells(i, 13) = Cells(i, 32) Then
+                        Cells(i, 45) = "TRUE"
+                    Else
+                        Cells(i, 45) = "FALSE"
+                        Cells(i, 45).Interior.Color = 255
+                    End If
+                End If
+                If Cells(i, 40) <> "Active" Then
+                    If Cells(i, 40) = "" Then
+                        Cells(i, 46) = "TRUE"
+                    Else
+                        Cells(i, 46) = "FALSE"
+                        Cells(i, 46).Interior.Color = 255
+                    End If
+                End If
+            End If
+            
+            'TA check data
+            If FillType = "TA" Then
+                Check_TA Cn, i
+            End If
+            
+            'SUB check data
+            If FillType = "SUB" Then
+                Check_SUB i
+            End If
+                
+            'Project Control Only
+            If UserGroup = "Admin" Then
+                'Expense Type
+                
+                'Restore [Project Scope] for NON type filling
+                If FillType = "NON" Or FillType = "SUB" Then
+                    If Not UserData(1) = "" Then
+                        Cells(i, 1) = UserData(1)
+                        Cells(i, 1).Interior.ThemeColor = 6
+                    Else
+                        Write_Error "Fill [Project Scope] Column", i
+                        Cells(i, 1).Interior.Color = 255
+                    End If
+                End If
+                
+                'AMI type filling
+                If FillType = "AMI" Then
+                    Fill_AMI Cn, i
+                    
+                    'Expenses Categories and Expense Type
+                    ' If ActiveSheet.Name = "Expense" And Not Cells(i, 35) = "" Then
+                    If ActiveSheet.Name = "Expense" And Cells(i, 35) <> "" Then
+                        If Cells(i, 35) = "6608030" Then
+                            Cells(i, 33) = WorksheetFunction.VLookup(Cells(i, 4), Workbooks(DataFile).Worksheets("Expense").Range("B:C"), 2, False)
+                        Else
+                            Cells(i, 4) = WorksheetFunction.VLookup(Cells(i, 35), Workbooks(DataFile).Worksheets("Expense").Range("A:B"), 2, False)
+                            Cells(i, 33) = WorksheetFunction.VLookup(Cells(i, 35), Workbooks(DataFile).Worksheets("Expense").Range("A:C"), 3, False)
+                        End If
+                    End If
+                End If
+                
+                If Cells(i, 4) = "" Then
+                    Write_Error "Fill [Expense Type] Column", i
+                    Cells(i, 4).Interior.Color = 255
+                ElseIf Cells(i, 1) = "" Then
+                    Write_Error "Fill [Project Scope] Column", i
+                    Cells(i, 1).Interior.Color = 255
+                ElseIf Not Cells(i, 18) = "" Then
+                    If ActiveSheet.Name = "Taxes" Or Not FillType = "AMI" Then
+                        'Expenses Categories
+                        Cells(i, 33) = WorksheetFunction.VLookup(Cells(i, 4), Workbooks(DataFile).Worksheets("Expense").Range("B:C"), 2, False)
+                        If Cells(i, 33) = "" Then
+                            Write_Error "[Expenses Categories] not found", i
+                            Cells(i, 33).Interior.Color = 255
+                        End If
+    
+                        'Cost Element
+                        Cells(i, 35) = WorksheetFunction.VLookup(Cells(i, 4), Workbooks(DataFile).Worksheets("Expense").Range("B:D"), 3, False)
+                        If Cells(i, 35) = "" Then
+                            Write_Error "[Cost Element] not found", i
+                            Cells(i, 35).Interior.Color = 255
+                        End If
+                    End If
+                    
+                    If Cells(5, 4) = "Non-Billable" Then
+                        'Update CTR
+                        Cells(i, 2) = "NBIL"
+
+                        'NetWork
+                        Fill_NetWork_NB i
+                    ElseIf FillType = "SUB" Then
+                        Fill_SUB i
+                        
+                        'Update CTR
+                        Cells(i, 2) = Right(Cells(i, 34), 4)
+                    ElseIf Cells(i, 4) = "Rentals - Facility" Then
+                        'Update Project Scope
+                        'Cells(i, 1) = IIf(Left(Cells(i, 1), 3) = "INT", "INT-EXE-TGZ", "ST2-NIT-TGZ")
+                        Cells(i, 1) = IIf(Left(Cells(i, 1), 3) = "INT", "INT-EXE-TGZ", IIf(Left(Cells(i, 1), 2) = "ST", Cells(i, 1), "ST2-NIT-TGZ"))
+                        
+                        'NetWork & AFE
+                        Select Case Cells(i, 1) & "#" & Cells(i, 18)
+                            Case "INT-EXE-TGZ#KZT"
+                                Cells(i, 34) = "00T9CO000701 X36T"
+                                Cells(i, 36) = 9416113359#
+                            Case "ST2-NIT-TGZ#KZT"
+                                Cells(i, 34) = "00T9CO000470 E367"
+                                Cells(i, 36) = 9414112378#
+                            Case "ST-SUET-TGZ#KZT"
+                                Cells(i, 34) = "00T9CO000470 T368"
+                                Cells(i, 36) = 9414112378#
+                            Case Else
+                                Write_Error "[NW/NWA] not found", i
+                                Cells(i, 34).Interior.Color = 255
+                        End Select
+                        
+                        'Update CTR
+                        Cells(i, 2) = Right(Cells(i, 34), 4)
+                    Else
+                        'Update CTR
+                        If Not Cells(i, 1) = "" And Not Left(Cells(i, 1), 7) = "INT-EXE" Then Fill_CTR i
+    
+                        'NetWork & AFE
+                        Fill_NetWork i, IIf(Cells(i, 31) = "DEL", "DEL", "")
+                    End If
+                End If
+            End If
+            
+            'Refresh Progress Indicator
+            Me.piInfo.Caption = Format((i - 12) / n * 100, "#0.00") & "% Completed"
+            Me.piBar.Width = (i - 12) / n * 200
+            DoEvents
+        Loop
+        
+        Cn.Close
+    End If
+    Set Cn = Nothing
+
+    Unload Me
+End Sub

@@ -1,0 +1,31 @@
+Option Explicit
+
+Const RegPath As String = "HKEY_CURRENT_USER\Software\Microsoft\Office\16.0\Excel\Security\Trusted Locations\"
+
+Public Sub TrustHandle()
+    On Error Resume Next
+    
+    Dim RegWS As Object
+    Dim RegValue As String
+    Dim RegExist As Boolean
+    Dim i As Integer
+    
+    Set RegWS = CreateObject("WScript.Shell")
+    RegWS.RegWrite RegPath & "AllowNetworkLocations", 1, "REG_DWORD"
+    
+    Err.Clear
+    Do While Not RegExist
+        RegValue = RegWS.RegRead(RegPath & "Location" & i & "\Path")
+        If Hex(Err.Number) = "80070002" Then Exit Do
+        If RegValue = DataPath Then RegExist = True
+        i = i + 1
+    Loop
+    
+    If Not RegExist Then
+        RegWS.RegWrite RegPath & "Location" & i & "\Description", "Expenses Format", "REG_SZ"
+        RegWS.RegWrite RegPath & "Location" & i & "\Path", DataPath, "REG_SZ"
+        RegWS.RegWrite RegPath & "Location" & i & "\Date", Now(), "REG_SZ"
+    End If
+    
+    Set RegWS = Nothing
+End Sub
